@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        body {
+            text-align: center;
+            padding-top: 20px;
+            height: 96vh;
+            background: linear-gradient(#777 0%, aqua 50%, black 100%);
+            font-family:'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            border: 1px solid #333;
+            background: white;
+            box-shadow: 0px 0px 10px 7px #333;
+        }
+        .inputs {
+            display: inline-flex;
+        }
+        .inputs .input {
+            padding: 10px;
+        }
+        .inputs .input input[type="number"] {
+            width: 30px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Wyte Bored</h1>
+    <canvas id="canvas" width="800" height="500"></canvas>
+    <div class="inputs">
+        <div class="input">
+            <label for="#line-width">Line Width</label>
+            <input type="number" value="1" id="line-width" step="1" />
+        </div>
+        <div class="input">
+            <label for="#stroke-color">Stroke Color</label>
+            <input type="color" value="#333" id="stroke-color" />
+        </div>
+        <div class="input">
+            <!-- <button id="save">Save</button> -->
+            <button id="clear">Clear</button>
+            <button id="undo">Undo</button>
+            <input type="checkbox" id="eraser">
+            <label for="eraser">Eraser</label>
+        </div>
+    </div>
+    <script>
+        let canvas = document.getElementById('canvas');
+        let ctx = canvas.getContext('2d');
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        let width = canvas.width, height = canvas.height;
+        let randRange = (min,max) => (Math.random() * (max - min)) + min;
+        let anim;
+
+        let mousedown = false;
+        let pointsList = [];
+        let points = [];
+        let lineWidth = 1;
+        let strokeColor = '#333';
+
+        let lineWidthEl = document.getElementById('line-width');
+        lineWidthEl.oninput = () => lineWidth = lineWidthEl.value;
+        let strokeColorEl = document.getElementById('stroke-color');
+        strokeColorEl.oninput = () => strokeColor = strokeColorEl.value;
+
+        let clear = document.getElementById('clear')
+        clear.onclick = () => {
+            pointsList = [];
+            draw();
+        }
+        let undo = document.getElementById('undo')
+        undo.onclick = () => {
+            pointsList.splice(pointsList.length - 1, 1);
+            draw();
+        }
+        let eraser = document.getElementById('eraser');
+
+
+        canvas.onmousedown = () => {
+            mousedown = true;
+            if (!eraser.checked) {
+                pointObj = {
+                    points: [],
+                    lineWidth: lineWidth,
+                    strokeColor: strokeColor
+                };
+                pointsList.push(pointObj);
+            }
+        };
+        canvas.onmousemove = (e) => {
+            let bbox = e.target.getBoundingClientRect();
+            let point = {
+                x: e.x - bbox.x,
+                y: e.y - bbox.y,
+                color: 'grey',
+                radius: '5'
+            }
+            if (mousedown && !eraser.checked) {
+                pointsList[pointsList.length - 1].points.push(point);
+                draw();
+            } else if (eraser.checked) {
+                draw(point);
+            }
+        }
+        canvas.onmouseup = canvas.onmouseleave = () => {
+            mousedown = false;
+        }
+
+
+        draw();
+
+        function draw(mousePoint) {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            if (pointsList.length > 0) {
+                pointsList.forEach(points => {
+                    drawPoints(points);
+                })
+            };
+            if (eraser.checked) {
+                eraserFun(mousePoint);
+            }
+        }
+
+        function eraserFun (point) {
+            drawCircle(point, '#777777', 20);
+            console.log('------new eraser-------')
+            pointsList.forEach(ps => {
+                ps.points[0].dFromMouse = distance(point, ps.points[0]);
+                for (var i = 1; i < ps.points.length; i++) {
+                    let line = {
+                        x0: ps.points[i - 1].x,
+                        y0: ps.points[i - 1].y,
+                        x1: ps.points[i].x,
+                        y1: ps.points[i].y
+                    }
+                    let linePoint = linepointNearestMouse(line, point);
+                    let dx = point.x - linePoint.x;
+                    let dy = point.y - linePoint.y;
+                    let dist = distance(point, linePoint);
+                    drawCircle(linePoint, 'pink', 3);
+                    if (dist < 20) {
+                        ps.points[i].color = 'aqua';
+                    } else {
+                        ps.points[i].color = 'grey';
+                    }
+                    ps.points[i].dFromMouse = distance(point, ps.points[i]);
+                    ps.points[i].linePoint = linePoint;
+                    ps.points[i].dFromLine = distanceFromLine(line, point);
+                }
+            })
+            let testPoint = { dFromMouse: Infinity };
+            pointsList.forEach(pl => {
+                pl.points.forEach(p => {
+                    if (p.dFromLine < 20 && p.dFromMouse < testPoint.dFromMouse) {
+                        testPoint = p;
+                    }
+                })
+            })
+            console.log('testPoint', testPoint)
+            drawCircle(testPoint.linePoint, 'green', 4)
+        }
+
+        function distanceFromLine({x0,y0,x1,y1}, {x,y}) {
+            let m = (y0 - y1) / (x0 - x1);
+            let A = -m;
+            let B = 1;
+            let C = -y1 + m * x1;
+
+            let D = Math.abs((A * x) + (B * y) + C) / Math.sqrt((A * A) + (B * B));
+
+            console.log('D', D);
+            return D;
+        }
+
+        function linepointNearestMouse({x0,y0,x1,y1}, {x,y}) {
+            //
+            function lerp(a, b, x) {
+                return (a + x * (b - a));
+            };
+            var dx = x1 - x0;
+            var dy = y1 - y0;
+            var t = ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy);
+            var lineX = lerp(x0, x1, t);
+            var lineY = lerp(y0, y1, t);
+            return ({
+                x: lineX,
+                y: lineY
+            });
+        };
+
+        function distance (p1, p2) {
+            return Math.sqrt(Math.pow((p1.x - p2.x), 2) + Math.pow((p1.y - p2.y), 2));
+        }
+
+        function drawCircle({x,y}, stroke, radius) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = stroke;
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function drawPoints({points, lineWidth, strokeColor}) {
+            if (points.length < 3) {
+                var b = points[0];
+                ctx.beginPath();
+                ctx.moveTo(b.x, b.y)
+                for (var i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y)
+                }  
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = lineWidth;
+                ctx.stroke();
+                ctx.closePath();
+                return;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (var i = 1; i < points.length - 2; i++) {
+                let c = (points[i].x + points[i + 1].x) / 2;
+                let d = (points[i].y + points[i + 1].y) / 2;
+                ctx.quadraticCurveTo(points[i].x, points[i].y, c, d);
+            }
+            ctx.quadraticCurveTo(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+            ctx.closePath();
+
+            for (var c = 0; c < points.length; c++) {
+                drawCircle(points[c], points[c].color, points[c].radius);
+            }
+        }
+
+
+    </script>
+</body>
+</html>
